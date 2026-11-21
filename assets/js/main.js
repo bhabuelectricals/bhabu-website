@@ -98,11 +98,37 @@
         body: `Name: ${d.name}\nPhone: ${d.phone}\nEmail: ${d.email}\nProject type: ${d.type}\nLocation: ${d.location}\nApprox. load: ${d.load || "-"}\n\n${d.message}`,
       };
     };
-    form.addEventListener("submit", (e) => {
+    const status = $("#form-status"), btn = $('button[type="submit"]', form);
+    const btnLabel = btn.innerHTML;
+    const showStatus = (kind, html) => { status.className = "form-status form-status--" + kind; status.innerHTML = html; status.hidden = false; };
+    form.addEventListener("submit", async (e) => {
       e.preventDefault();
       if (!form.reportValidity()) return;
+      const d = Object.fromEntries(new FormData(form).entries());
+      if (d._honey) return; // bot filled the hidden field
       const m = compose();
-      window.location.href = `mailto:${form.dataset.email}?subject=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.body)}`;
+      const mailto = `mailto:${form.dataset.email}?subject=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.body)}`;
+      const wa = `https://wa.me/${form.dataset.wa}?text=${encodeURIComponent(m.subject + "\n\n" + m.body)}`;
+      btn.disabled = true; btn.textContent = "Sending…"; status.hidden = true;
+      try {
+        const res = await fetch(form.dataset.endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            Name: d.name, Phone: d.phone, Email: d.email || "-", "Project location": d.location,
+            "Project type": d.type, "Approx. load": d.load || "-", Message: d.message,
+            _subject: m.subject, _template: "table", _captcha: "false", ...(d.email ? { _replyto: d.email } : {}),
+          }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok || String(out.success) !== "true") throw new Error(out.message || res.status);
+        form.reset();
+        showStatus("ok", `<b>Thank you, ${esc(d.name)}!</b> Your enquiry has reached our team. An engineer will call you on ${esc(d.phone)}, usually within one working day.`);
+      } catch (err) {
+        showStatus("err", `<b>Sorry, the message couldn't be sent.</b> Please <a href="${mailto}">email us</a>, <a href="${wa}" target="_blank" rel="noopener">send it on WhatsApp</a> or call <a href="tel:+919965056195">+91 996 505 6195</a>.`);
+      } finally {
+        btn.disabled = false; btn.innerHTML = btnLabel;
+      }
     });
     const wa = $("#send-wa");
     wa && wa.addEventListener("click", () => {
